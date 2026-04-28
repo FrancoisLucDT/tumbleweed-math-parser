@@ -1,0 +1,366 @@
+using System;
+using System.Collections.Generic;
+
+namespace ElaroSolutions.DARFormula {
+
+
+
+public class Parser {
+	public const int _EOF = 0;
+	public const int _variable = 1;
+	public const int _sin = 2;
+	public const int _cos = 3;
+	public const int _tan = 4;
+	public const int _asin = 5;
+	public const int _acos = 6;
+	public const int _atan = 7;
+	public const int _sinh = 8;
+	public const int _cosh = 9;
+	public const int _tanh = 10;
+	public const int _log = 11;
+	public const int _ln = 12;
+	public const int _sqrt = 13;
+	public const int _ceil = 14;
+	public const int _floor = 15;
+	public const int _abs = 16;
+	public const int _sum = 17;
+	public const int _mult = 18;
+	public const int _number = 19;
+	public const int _comp = 20;
+	public const int _plus = 21;
+	public const int _minus = 22;
+	public const int _muldivmod = 23;
+	public const int _exp = 24;
+	public const int _comma = 25;
+	public const int _leftparen = 26;
+	public const int _rightparen = 27;
+	public const int maxT = 28;
+
+	const bool _T = true;
+	const bool _x = false;
+	const int minErrDist = 0;
+	
+	public Scanner scanner;
+	public Errors  errors;
+
+	public Token t;    // last recognized token
+	public Token la;   // lookahead token
+	int errDist = minErrDist;
+
+	public Node root {get; set;}
+
+	public Dictionary<string,double> variables;
+
+	public Parser(Scanner scanner, ref Dictionary<string,double> variables) {
+		this.scanner = scanner;
+		errors = new Errors();
+		this.root=null;
+		this.variables=variables;
+	}
+
+	void SynErr (int n, Token t) {
+		if (errDist >= minErrDist) errors.SynErr( n,t);
+		errDist = 0;
+	}
+
+	public void SemErr (string msg) {
+		if (errDist >= minErrDist) errors.SemErr(t.line, t.col, msg);
+		errDist = 0;
+	}
+	
+	void Get () {
+		for (;;) {
+			t = la;
+			la = scanner.Scan();
+			if (la.kind <= maxT) { ++errDist; break; }
+
+			la = t;
+		}
+	}
+	
+	void Expect (int n) {
+		if (la.kind==n) Get(); else { SynErr(n,la); }
+	}
+	
+	bool StartOf (int s) {
+		return set[s, la.kind];
+	}
+	
+	void ExpectWeak (int n, int follow) {
+		if (la.kind == n) Get();
+		else {
+			SynErr(n,la);
+			while (!StartOf(follow)) Get();
+		}
+	}
+
+
+	bool WeakSeparator(int n, int syFol, int repFol) {
+		int kind = la.kind;
+		if (kind == n) {Get(); return true;}
+		else if (StartOf(repFol)) {return false;}
+		else {
+			SynErr(n,la);
+			while (!(set[syFol, kind] || set[repFol, kind] || set[0, kind])) {
+				Get();
+				kind = la.kind;
+			}
+			return StartOf(syFol);
+		}
+	}
+
+	
+	void DARFormula() {
+		Node e;
+		Formula(out e);
+		this.root=e;
+	}
+
+	void Formula(out Node e) {
+		BinaryFunctions op;
+		Node e2;
+		Expression(out e);
+		while (la.kind == 20) {
+			Get();
+			switch(t.val)
+			{case "=":op=BinaryFunctions.Equals;break;
+			case "!=":op=BinaryFunctions.Unequals;break;
+			case "<":op=BinaryFunctions.Lesser;break;
+			case ">":op=BinaryFunctions.Greater;break;
+			default:op=BinaryFunctions.Undefined;SynErr(24,t);break;}
+			Expression(out e2);
+			e= BinaryNode.BinaryNodeConstructor(e,e2,op);
+		}
+	}
+
+	void Expression(out Node e) {
+		BinaryFunctions op;
+		Node e2;
+		Term(out e);
+		while (la.kind == 21 || la.kind == 22) {
+			if (la.kind == 21) {
+				Get();
+				op= BinaryFunctions.Plus;
+			} else {
+				Get();
+				op= BinaryFunctions.Minus;
+			}
+			Term(out e2);
+			e = BinaryNode.BinaryNodeConstructor(e,e2,op);
+		}
+	}
+
+	void Term(out Node e) {
+		BinaryFunctions op;
+		Node e2;
+		Factor(out e);
+		while (la.kind == 23) {
+			Get();
+			switch(t.val)
+			{
+				case "*":op=BinaryFunctions.Times;break;
+				case "/":op=BinaryFunctions.Divide;break;
+				case "%":op=BinaryFunctions.Modulo;break;
+				default: op=BinaryFunctions.Undefined;SynErr(24,t);break;
+			}
+			Factor(out e2);
+			e = BinaryNode.BinaryNodeConstructor(e,e2,op);
+		}
+	}
+
+	void Factor(out Node e) {
+		Node e2;
+		PossiblyNegatedOperand(out e);
+		while (la.kind == 24) {
+			Get();
+			PossiblyNegatedOperand(out e2);
+			e = new ExponentNode(e,e2);
+		}
+	}
+
+	void PossiblyNegatedOperand(out Node e) {
+		bool isNegated=false;
+		if (la.kind == 22) {
+			Get();
+			isNegated=true;
+		}
+		Operand(out e);
+		if(isNegated){e = new NegateNode(e);}
+	}
+
+	void Operand(out Node e) {
+		string countingVariable; 
+		Node lim;
+		UnaryFunctions op;
+		TernaryFunctions op3; 
+		if (la.kind == 1 || la.kind == 19) {
+			Quantity(out e);
+		} else if (StartOf(1)) {
+			Func(out op);
+			Expect(26);
+			Formula(out e);
+			Expect(27);
+			e = UnaryNode.UnaryNodeConstructor(e,op); 
+		} else if (la.kind == 17 || la.kind == 18) {
+			Func3(out op3);
+			Expect(26);
+			Expect(1);
+			countingVariable=t.val; 
+			Expect(25);
+			Formula(out lim);
+			Expect(25);
+			Formula(out e);
+			Expect(27);
+			e = TernaryNode.TernaryNodeConstructor(countingVariable, lim,e,ref variables,op3); 
+		} else if (la.kind == 26) {
+			Get();
+			Formula(out e);
+			Expect(27);
+		} else {e=null;SynErr(29,la);}
+	}
+
+	void Quantity(out Node e) {
+		if (la.kind == 1) {
+			Get();
+			e= new VariableNode(t.val,ref variables); 
+		} else if (la.kind == 19) {
+			Get();
+			e= new ValueNode(Double.Parse(t.val)); 
+		} else {e=null;SynErr(30,la);}
+	}
+
+	void Func(out UnaryFunctions op) {
+		if(la.kind>=2 && la.kind <=16)
+		{
+			Get();
+			op = (UnaryFunctions)t.kind; 
+		}
+		else 
+		{
+			op=UnaryFunctions.Undefined;
+			SynErr(31,la);
+		}
+		
+	}
+
+	void Func3(out TernaryFunctions op) {
+		if (la.kind == 17) {
+			Get();
+		} else if (la.kind == 18) {
+			Get();
+		} else SynErr(32,la);
+		op = (TernaryFunctions)t.kind; 
+	}
+
+
+
+	public Node Parse() {
+		la = new Token();
+		la.val = "";		
+		Get();
+		DARFormula();
+		Expect(0);
+		return this.root;
+
+	}
+	
+	static readonly bool[,] set = {
+		{_T,_x,_x,_x, _x,_x,_x,_x, _x,_x,_x,_x, _x,_x,_x,_x, _x,_x,_x,_x, _x,_x,_x,_x, _x,_x,_x,_x, _x,_x},
+		{_x,_x,_T,_T, _T,_T,_T,_T, _T,_T,_T,_T, _T,_T,_T,_T, _T,_x,_x,_x, _x,_x,_x,_x, _x,_x,_x,_x, _x,_x}
+
+	};
+} // end Parser
+
+public class UnexpectedEOLException : Exception
+{
+	public UnexpectedEOLException():base("Unexpected end of formula"){}
+}
+
+public class UnexpectedTokenException : Exception
+{
+	public UnexpectedTokenException(Token t,string m):base("Unexpected '"+t.val+"' symbol at column "+t.col+m){}
+
+	public UnexpectedTokenException(int col,string m):base("Unexpected symbol at column "+col+", "+ m){}
+}
+
+public class MissingRightParentheseException: Exception
+{
+	public MissingRightParentheseException(int col):base("Expected right parenthese at column "+col){}
+}
+
+public class MissingLeftParentheseException: Exception
+{
+	public MissingLeftParentheseException(int col):base("Expected left parenthese at column "+col){}
+}
+
+public class Errors {
+	public int count = 0;                                    // number of errors detected
+	//public System.IO.TextWriter errorStream = System.IO.StringWriter;   // error messages go to this stream
+	public string errMsgFormat = "-- line {0} col {1}: {2}"; // 0=line, 1=column, 2=text
+
+	public virtual void SynErr (int n, Token t) {
+		string s;
+		switch (n) {
+			case 0: throw new UnexpectedTokenException(t.col,"end of formula expected");
+			case 1: throw new UnexpectedTokenException(t.col,"variable expected");
+			case 2: 
+			case 3:
+			case 4:
+			case 5:
+			case 6:
+			case 7:
+			case 8:
+			case 9:
+			case 10:
+			case 11:
+			case 12:
+			case 13:
+			case 14:
+			case 15:
+			case 16: throw new UnexpectedTokenException(t.col,"function expected");
+			case 17:
+			case 18: throw new UnexpectedTokenException(t.col,"sum or mult expected");
+			case 19: throw new UnexpectedTokenException(t.col,"number expected");
+			case 20:
+			case 21:
+			case 22:
+			case 23:
+			case 24: throw new UnexpectedTokenException(t.col,"operator (!=,+,*,etc) expected");
+			case 25: throw new UnexpectedTokenException(t.col, "comma expected");
+			case 26: throw new MissingLeftParentheseException(t.col);
+			case 27: throw new MissingRightParentheseException(t.col);
+			case 28: throw new FatalError("invalid formula"); 
+			case 29: throw new UnexpectedTokenException(t,", expected number, variable, or function");
+			case 30: throw new UnexpectedTokenException(t,", expected number or variable");
+			case 31: throw new UnexpectedTokenException(t, ", expected a function");
+			case 32: throw new UnexpectedTokenException(t, ", expected mult or sum");
+
+			default: s = "error " + n; break;
+		}
+		count++;
+		
+	}
+
+	public virtual void SemErr (int line, int col, string s) {
+		count++;
+	}
+	
+	public virtual void SemErr (string s) {
+	//	errorStream.WriteLine(s);
+		count++;
+	}
+	
+	public virtual void Warning (int line, int col, string s) {
+	//	errorStream.WriteLine(errMsgFormat, line, col, s);
+	}
+	
+	public virtual void Warning(string s) {
+	//	errorStream.WriteLine(s);
+	}
+} // Errors
+
+
+public class FatalError: Exception {
+	public FatalError(string m): base(m) {}
+}
+}

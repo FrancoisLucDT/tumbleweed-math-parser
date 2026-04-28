@@ -1,0 +1,436 @@
+
+using System;
+using System.Collections.Generic;
+
+namespace ElaroSolutions.DARFormula {
+
+
+
+public class Parser {
+	public const int _EOF = 0;
+	public const int _variable = 1;
+	public const int _data = 2;
+	public const int _sin = 3;
+	public const int _cos = 4;
+	public const int _tan = 5;
+	public const int _asin = 6;
+	public const int _acos = 7;
+	public const int _atan = 8;
+	public const int _sinh = 9;
+	public const int _cosh = 10;
+	public const int _tanh = 11;
+	public const int _log = 12;
+	public const int _ln = 13;
+	public const int _sqrt = 14;
+	public const int _ceil = 15;
+	public const int _floor = 16;
+	public const int _abs = 17;
+	public const int _sum = 18;
+	public const int _mult = 19;
+	public const int _number = 20;
+	public const int _comp = 21;
+	public const int _plus = 22;
+	public const int _minus = 23;
+	public const int _muldivmod = 24;
+	public const int _exp = 25;
+	public const int _comma = 26;
+	public const int _leftparen = 27;
+	public const int _rightparen = 28;
+	public const int _leftbrack = 29;
+	public const int _rightbrack = 30;
+	public const int maxT = 31;
+
+	const bool _T = true;
+	const bool _x = false;
+	const int minErrDist = 2;
+	
+	public Scanner scanner;
+	public Errors  errors;
+
+	public Token t;    // last recognized token
+	public Token la;   // lookahead token
+	int errDist = minErrDist;
+
+	public Node root {get; set;}
+
+	public Dictionary<string,double> variables;
+
+	public IDataLists data;
+
+
+	public Parser(Scanner scanner, ref Dictionary<string,double> variables,ref IDataLists data) {
+		this.scanner = scanner;
+		errors = new Errors();
+		this.root=null;
+		this.variables=variables;
+		this.data=data;
+	}
+
+	void SynErr (int n) {
+		if (errDist >= minErrDist) errors.SynErr(la.line, la.col, n);
+		errDist = 0;
+	}
+
+	public void SemErr (string msg) {
+		if (errDist >= minErrDist) errors.SemErr(t.line, t.col, msg);
+		errDist = 0;
+	}
+	
+	void Get () {
+		for (;;) {
+			t = la;
+			la = scanner.Scan();
+			if (la.kind <= maxT) { ++errDist; break; }
+
+			la = t;
+		}
+	}
+	
+	void Expect (int n) {
+		if (la.kind==n) Get(); else { SynErr(n); }
+	}
+	
+	bool StartOf (int s) {
+		return set[s, la.kind];
+	}
+	
+	void ExpectWeak (int n, int follow) {
+		if (la.kind == n) Get();
+		else {
+			SynErr(n);
+			while (!StartOf(follow)) Get();
+		}
+	}
+
+
+	bool WeakSeparator(int n, int syFol, int repFol) {
+		int kind = la.kind;
+		if (kind == n) {Get(); return true;}
+		else if (StartOf(repFol)) {return false;}
+		else {
+			SynErr(n);
+			while (!(set[syFol, kind] || set[repFol, kind] || set[0, kind])) {
+				Get();
+				kind = la.kind;
+			}
+			return StartOf(syFol);
+		}
+	}
+
+	
+	void DARFormula() {
+		Node e;
+		Formula(out e);
+		this.root=e;
+	}
+
+	void Formula(out Node e) {
+		BinaryFunctions op;
+		Node e2;
+		Expression(out e);
+		while (la.kind == 21) {
+			Get();
+			switch(t.val)
+			{case "=":op=BinaryFunctions.Equals;break;
+			case "!=":op=BinaryFunctions.Unequals;break;
+			case "<":op=BinaryFunctions.Lesser;break;
+			case ">":op=BinaryFunctions.Greater;break;
+			default:op=BinaryFunctions.Undefined;SynErr(21);break;}
+			Expression(out e2);
+			e= BinaryNode.BinaryNodeConstructor(e,e2,op);
+		}
+	}
+
+	void Expression(out Node e) {
+		BinaryFunctions op;
+		Node e2;
+		Term(out e);
+		while (la.kind == 22 || la.kind == 23) {
+			if (la.kind == 22) {
+				Get();
+				op= BinaryFunctions.Plus;
+			} else {
+				Get();
+				op= BinaryFunctions.Minus;
+			}
+			Term(out e2);
+			e = BinaryNode.BinaryNodeConstructor(e,e2,op);
+		}
+	}
+
+	void Term(out Node e) {
+		BinaryFunctions op;
+		Node e2;
+		Factor(out e);
+		while (la.kind == 24) {
+			Get();
+			if(t.val.CompareTo("*")==0)
+			{op=BinaryFunctions.Times;}
+			else if(t.val.CompareTo("/")==0)
+			{op=BinaryFunctions.Divide;}
+			else if(t.val.CompareTo("%")==0)
+			{op=BinaryFunctions.Modulo;}
+			else {op=BinaryFunctions.Undefined;}
+			Factor(out e2);
+			e = BinaryNode.BinaryNodeConstructor(e,e2,op);
+		}
+	}
+
+	void Factor(out Node e) {
+		Node e2;
+		PossiblyNegatedOperand(out e);
+		while (la.kind == 25) {
+			Get();
+			PossiblyNegatedOperand(out e2);
+			e = new ExponentNode(e,e2);
+		}
+	}
+
+	void PossiblyNegatedOperand(out Node e) {
+		bool isNegated=false;
+		if (la.kind == 23) {
+			Get();
+			isNegated=true;
+		}
+		Operand(out e);
+		if(isNegated){e = new NegateNode(e);}
+	}
+
+	void Operand(out Node e) {
+		string countingVariable;
+		Node lim;
+		UnaryFunctions op;
+		TernaryFunctions op3; 
+		if (la.kind == 1 || la.kind == 2 || la.kind == 20) {
+			Quantity(out e);
+		} else if (StartOf(1)) {
+			Func(out op);
+			Expect(27);
+			Formula(out e);
+			Expect(28);
+			e = UnaryNode.UnaryNodeConstructor(e,op); 
+		} else if (la.kind == 18 || la.kind == 19) {
+			Func3(out op3);
+			Expect(27);
+			Expect(1);
+			countingVariable=t.val; 
+			Expect(26);
+			Formula(out lim);
+			Expect(26);
+			Formula(out e);
+			Expect(28);
+			e = TernaryNode.TernaryNodeConstructor(countingVariable, lim,e,ref variables,op3); 
+		} else if (la.kind == 27) {
+			Get();
+			Formula(out e);
+			Expect(28);
+		} else {e=null; SynErr(32);}
+	}
+
+	void Quantity(out Node e) {
+		if (la.kind == 2) {
+			Data(out e);
+		} else if (la.kind == 1) {
+			Get();
+			e= new VariableNode(t.val, ref variables); 
+		} else if (la.kind == 20) {
+			Get();
+			e= new ValueNode(Double.Parse(t.val)); 
+		} else {e=null;SynErr(33);}
+	}
+
+	void Func(out UnaryFunctions op) {
+		switch (la.kind) {
+		case 3: {
+			Get();
+			break;
+		}
+		case 4: {
+			Get();
+			break;
+		}
+		case 5: {
+			Get();
+			break;
+		}
+		case 6: {
+			Get();
+			break;
+		}
+		case 7: {
+			Get();
+			break;
+		}
+		case 8: {
+			Get();
+			break;
+		}
+		case 9: {
+			Get();
+			break;
+		}
+		case 10: {
+			Get();
+			break;
+		}
+		case 11: {
+			Get();
+			break;
+		}
+		case 12: {
+			Get();
+			break;
+		}
+		case 13: {
+			Get();
+			break;
+		}
+		case 14: {
+			Get();
+			break;
+		}
+		case 15: {
+			Get();
+			break;
+		}
+		case 16: {
+			Get();
+			break;
+		}
+		case 17: {
+			Get();
+			break;
+		}
+		default: SynErr(34); break;
+		}
+		op = (UnaryFunctions)t.kind; 
+	}
+
+	void Func3(out TernaryFunctions op) {
+		if (la.kind == 18) {
+			Get();
+		} else if (la.kind == 19) {
+			Get();
+		} else SynErr(35);
+		op = (TernaryFunctions)t.kind; 
+	}
+
+	void Data(out Node e) {
+		List<Node> indexes =new List<Node>(); 
+		Node e2; string fieldName=""; 
+		Expect(2);
+		Expect(29);
+		Formula(out e);
+		Expect(30);
+		indexes.Add(e); 
+		while (la.kind == 29) {
+			Get();
+			Formula(out e2);
+			Expect(30);
+			indexes.Add(e2); 
+		}
+		if (la.kind == 29) {
+			Get();
+			Expect(1);
+			fieldName=t.val; 
+			Expect(30);
+		}
+		e = new DataNode(indexes, fieldName, ref data);
+		
+	}
+
+
+
+	public Node Parse() {
+		la = new Token();
+		la.val = "";		
+		Get();
+		DARFormula();
+		Expect(0);
+		return this.root;
+
+	}
+	
+	static readonly bool[,] set = {
+		{_T,_x,_x,_x, _x,_x,_x,_x, _x,_x,_x,_x, _x,_x,_x,_x, _x,_x,_x,_x, _x,_x,_x,_x, _x,_x,_x,_x, _x,_x,_x,_x, _x},
+		{_x,_x,_x,_T, _T,_T,_T,_T, _T,_T,_T,_T, _T,_T,_T,_T, _T,_T,_x,_x, _x,_x,_x,_x, _x,_x,_x,_x, _x,_x,_x,_x, _x}
+
+	};
+} // end Parser
+
+
+public class Errors {
+	public int count = 0;                                    // number of errors detected
+	public System.IO.TextWriter errorStream = Console.Out;   // error messages go to this stream
+	public string errMsgFormat = "-- line {0} col {1}: {2}"; // 0=line, 1=column, 2=text
+
+	public virtual void SynErr (int line, int col, int n) {
+		string s;
+		switch (n) {
+			case 0: s = "EOF expected";throw new FatalError(col + ":"+ s);
+			case 1: s = "variable expected"; throw new FatalError(col + ":"+ s);
+			case 2: s = "data expected"; throw new FatalError(col + ":"+ s);
+			case 3: s = "sin expected"; throw new FatalError(col + ":"+ s);
+			case 4: s = "cos expected"; throw new FatalError(col + ":"+ s);
+			case 5: s = "tan expected"; throw new FatalError(col + ":"+ s);
+			case 6: s = "asin expected"; throw new FatalError(col + ":"+ s);
+			case 7: s = "acos expected"; throw new FatalError(col + ":"+ s);
+			case 8: s = "atan expected"; throw new FatalError(col + ":"+ s);
+			case 9: s = "sinh expected"; throw new FatalError(col + ":"+ s);
+			case 10: s = "cosh expected"; throw new FatalError(col + ":"+ s);
+			case 11: s = "tanh expected"; throw new FatalError(col + ":"+ s);
+			case 12: s = "log expected"; throw new FatalError(col + ":"+ s);
+			case 13: s = "ln expected"; throw new FatalError(col + ":"+ s);
+			case 14: s = "sqrt expected"; throw new FatalError(col + ":"+ s);
+			case 15: s = "ceil expected";throw new FatalError(col + ":"+ s);
+			case 16: s = "floor expected"; throw new FatalError(col + ":"+ s);
+			case 17: s = "abs expected"; throw new FatalError(col + ":"+ s);
+			case 18: s = "sum expected"; throw new FatalError(col + ":"+ s);
+			case 19: s = "mult expected"; throw new FatalError(col + ":"+ s);
+			case 20: s = "number expected"; throw new FatalError(col + ":"+ s);
+			case 21: s = "comp expected"; throw new FatalError(col + ":"+ s);
+			case 22: s = "plus expected"; throw new FatalError(col + ":"+ s);
+			case 23: s = "minus expected"; throw new FatalError(col + ":"+ s);
+			case 24: s = "muldivmod expected"; throw new FatalError(col + ":"+ s);
+			case 25: s = "exp expected"; throw new FatalError(col + ":"+ s);
+			case 26: s = "comma expected"; throw new FatalError(col + ":"+ s);
+			case 27: s = "leftparen expected"; throw new FatalError(col + ":"+ s);
+			case 28: s = "rightparen expected"; throw new FatalError(col + ":"+ s);
+			case 29: s = "leftbrack expected"; throw new FatalError(col + ":"+ s);
+			case 30: s = "rightbrack expected"; throw new FatalError(col + ":"+ s);
+			case 31: s = "??? expected"; throw new FatalError(col + ":"+ s);
+			case 32: s = "invalid Operand"; throw new FatalError(col + ":"+ s);
+			case 33: s = "invalid Quantity"; throw new FatalError(col + ":"+ s);
+			case 34: s = "invalid Func"; throw new FatalError(col + ":"+ s);
+			case 35: s = "invalid Func3"; throw new FatalError(col + ":"+ s);
+
+			default: s = "error " + n; break;
+		}
+		errorStream.WriteLine(errMsgFormat, line, col, s);
+		count++;
+	}
+
+	public virtual void SemErr (int line, int col, string s) {
+		errorStream.WriteLine(errMsgFormat, line, col, s);
+		count++;
+	}
+	
+	public virtual void SemErr (string s) {
+		errorStream.WriteLine(s);
+		count++;
+	}
+	
+	public virtual void Warning (int line, int col, string s) {
+		errorStream.WriteLine(errMsgFormat, line, col, s);
+	}
+	
+	public virtual void Warning(string s) {
+		errorStream.WriteLine(s);
+	}
+} // Errors
+
+
+public class FatalError: Exception {
+	public FatalError(string m): base(m) {}
+}
+}

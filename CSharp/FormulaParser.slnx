@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="FormulaParser.Tests/FormulaParser.Tests.csproj" />
+  <Project Path="FormulaParser/FormulaParser.csproj" />
+</Solution>

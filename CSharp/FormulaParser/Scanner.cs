@@ -3,7 +3,9 @@ using System;
 using System.IO;
 using System.Collections;
 
-namespace ElaroSolutions.DARFormula
+using ElaroSolutions.FormulaParser;
+
+namespace ElaroSolutions.FormulaParser
 {
 
     public class Token

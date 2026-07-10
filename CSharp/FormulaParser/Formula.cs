@@ -4,8 +4,10 @@ using System.IO;
 using System.Linq;
 using System.Text;
 
+using ElaroSolutions.FormulaParser;
 
-namespace ElaroSolutions.DARFormula
+
+namespace ElaroSolutions.FormulaParser
 {
     public class Formula
     {
@@ -42,6 +44,7 @@ namespace ElaroSolutions.DARFormula
             {
                 AddField(field);
             }
+
             SetData(data);
         }
 
@@ -52,8 +55,8 @@ namespace ElaroSolutions.DARFormula
 
         public void AddVariable(string variableName, double initialValue)
         {
-            if (_allowedVariables.Add(variableName))
-            { Variables.Add(variableName, initialValue); }
+            _allowedVariables.Add(variableName);
+            Variables.Add(variableName, initialValue); 
         }
 
         public void AddField(string fieldName)
@@ -80,63 +83,63 @@ namespace ElaroSolutions.DARFormula
             else SyntaxError = _parser.errors.errorsString;
         }
 
-        private void CheckVariablesAndFields()
+        private void CheckNode(Node n)
         {
-            void CheckNode(Node n)
+            if (n is VariableNode node1)
             {
-                if (n is VariableNode node1)
+                if (_allowedVariables.Any(variable => String.Compare(node1.ToString(), variable, StringComparison.Ordinal) == 0))
                 {
-                    if (_allowedVariables.Any(variable => String.Compare(node1.ToString(), variable, StringComparison.Ordinal) == 0))
-                    {
-                        return;
-                    }
-                    throw new UnexpectedVariableException("Unrecognized variable: " + n.ToString());
-                }
-                else if (n is DataNode node)
-                {
-                    foreach (Node n1 in node.DataIndexes)
-                    {
-                        CheckNode(n1);
-                    }
-
-                    if (_allowedFields.Any(field =>
-                        String.Compare(node.FieldToString(), field, StringComparison.Ordinal) == 0))
-                    {
-                        return;
-                    }
-
-                    throw new UnexpectedVariableException("Unsupported field: " + node.FieldToString());
-                }
-                else if (n is UnaryNode unaryNode)
-                {
-                    CheckNode(unaryNode.operand);
                     return;
                 }
-                else if (n is BinaryNode binaryNode)
+                throw new UnexpectedVariableException("Unrecognized variable: " + n.ToString());
+            }
+            else if (n is DataNode node)
+            {
+                foreach (Node n1 in node.DataIndexes)
                 {
-                    CheckNode(binaryNode.preoperand);
-                    CheckNode(binaryNode.postoperand);
+                    CheckNode(n1);
+                }
+
+                if (_allowedFields.Any(field =>
+                    String.Compare(node.FieldToString(), field, StringComparison.Ordinal) == 0))
+                {
                     return;
                 }
-                else if (n is TernaryNode ternaryNode)
-                {
-                    if (_allowedVariables.Contains(ternaryNode.counter.ToString()))
-                    {
-                        throw new UnexpectedVariableException("Unusable counting variable: " + ternaryNode.counter.ToString() + " already in use");
-                    }
-                    else
-                    {
-                        CheckNode(ternaryNode.limit);
-                        _allowedVariables.Add(ternaryNode.counter.ToString());
-                        CheckNode(ternaryNode.formula);
-                        _allowedVariables.Remove(ternaryNode.counter.ToString());
-                        return;
-                    }
 
+                throw new UnexpectedVariableException("Unsupported field: " + node.FieldToString());
+            }
+            else if (n is UnaryNode unaryNode)
+            {
+                CheckNode(unaryNode.operand);
+                return;
+            }
+            else if (n is BinaryNode binaryNode)
+            {
+                CheckNode(binaryNode.preoperand);
+                CheckNode(binaryNode.postoperand);
+                return;
+            }
+            else if (n is TernaryNode ternaryNode)
+            {
+                if (_allowedVariables.Contains(ternaryNode.counter.ToString()))
+                {
+                    throw new UnexpectedVariableException("Unusable counting variable: " + ternaryNode.counter.ToString() + " already in use");
+                }
+                else
+                {
+                    CheckNode(ternaryNode.limit);
+                    _allowedVariables.Add(ternaryNode.counter.ToString());
+                    CheckNode(ternaryNode.formula);
+                    _allowedVariables.Remove(ternaryNode.counter.ToString());
+                    return;
                 }
 
             }
 
+        }
+
+        private void CheckVariablesAndFields()
+        {
             CheckNode(_root);
         }
 

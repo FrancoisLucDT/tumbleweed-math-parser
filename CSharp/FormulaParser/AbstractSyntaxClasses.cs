@@ -2,8 +2,9 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
+using ElaroSolutions.UnitTests.FormulaParser;
 
-namespace ElaroSolutions.DARFormula
+namespace ElaroSolutions.FormulaParser
 {
 
     public interface IDataLists
@@ -30,6 +31,12 @@ namespace ElaroSolutions.DARFormula
         public FieldNotFoundException(string m) : base(m) { }
     }
 
+    enum NodeType
+    {
+        Simple, Unary, Binary, Ternary
+    }
+
+
     enum UnaryFunctions
     {
         Sin = 3, Cos, Tan, Asin, Acos, Atan, Sinh, Cosh, Tanh, Log, Ln, Sqrt, Ceil, Floor, Abs, Negate, Undefined
@@ -38,7 +45,7 @@ namespace ElaroSolutions.DARFormula
 
     enum BinaryFunctions
     {
-        Equals, Unequals, Greater, Lesser, Plus, Minus, Times, Divide, Modulo, Exponent, Undefined
+        Equals, Unequals, Greater, GreaterEquals, Lesser, LesserEquals, Plus, Minus, Times, Divide, Modulo, Exponent, Undefined
 
     }
 
@@ -47,84 +54,20 @@ namespace ElaroSolutions.DARFormula
         Sum = 18, Mult, Undefined
     }
 
-    enum NodeType
-    {
-        Simple, Unary, Binary, Ternary
-    }
     public abstract class Node
     {
         public const double PRECISION = 0.000005;
         internal abstract double CalcValue();
+
         public abstract override string ToString();
         internal abstract NodeType GetNodeType();
-        /*internal Dictionary<string,double> getVariables()
-        {
-            if(this.getType()==NodeType.Simple)
-            {
-                if(this is VariableNode)
-                {
-                    return ((VariableNode)this).variables;
-                }
-                else if(this is DataNode)
-                {
-                    Dictionary<string,double> variableCollection=new Dictionary<string, double>();
-                    foreach(Node n in ((DataNode)this).dataIndexes)
-                    {
-                        Dictionary<string,double> localVariables=n.getVariables();
-                        foreach(string s in localVariables.Keys)
-                        {
-                            int numberOfInstancesOfVariable=1;
-                            string variableToPutInCollection = s;
-                            double value=localVariables[s];
-                            while(variableCollection.ContainsKey(variableToPutInCollection)&& Math.Abs(value.CompareTo(variableCollection[variableToPutInCollection]))<1)
-                            {
-                                variableToPutInCollection=s+ "("+numberOfInstancesOfVariable+")";
-                                numberOfInstancesOfVariable++;
-                            }
-                            if(!variableCollection.ContainsKey(variableToPutInCollection)){
-                                variableCollection.Add(variableToPutInCollection, value);
-                            }
-                        }
-                    }
-                    return variableCollection;
-                }
-                else return new Dictionary<string,double>(0);
-            }
-            else if(this.getType()==NodeType.Unary)
-            {
-                return ((UnaryNode)this).operand.getVariables();
-            }
-            else if(this.getType()==NodeType.Binary)
-            {
-                Dictionary<string,double> variableCollection=((BinaryNode)this).preoperand.getVariables();
-                Dictionary<string,double> localVariablesPost=((BinaryNode)this).postoperand.getVariables();
-                foreach(string s in localVariablesPost.Keys)
-                        {
-                            int numberOfInstancesOfVariable=1;
-                            string variableToPutInCollection = s;
-                            double value=localVariablesPost[s];
-                            while(variableCollection.ContainsKey(variableToPutInCollection)&& value.CompareTo(variableCollection[variableToPutInCollection])==0)
-                            {
-                                variableToPutInCollection=s+ "("+numberOfInstancesOfVariable+")";
-                                numberOfInstancesOfVariable++;
-                            }
-                            if(!variableCollection.ContainsKey(variableToPutInCollection)){
-                                variableCollection.Add(variableToPutInCollection, value);
-                            }
-                        }
-                return variableCollection;
-            }
-            else if(this.getType()==NodeType.Ternary)
-            {
-                return ((TernaryNode)this).variables;
-            }
-            else return new Dictionary<string, double>(0);
-        }*/
     }
+        
 
     internal abstract class LeafNode : Node
     {
         internal abstract override double CalcValue();
+
         public abstract override string ToString();
 
         internal override NodeType GetNodeType()
@@ -172,7 +115,7 @@ namespace ElaroSolutions.DARFormula
             }
             catch (KeyNotFoundException)
             {
-                throw new UnexpectedVariableException("Unknown or uninitialized variable: " + _variable);
+                throw new UnexpectedVariableException("Uninitialized variable: " + _variable);
             }
 
         }
@@ -252,9 +195,31 @@ namespace ElaroSolutions.DARFormula
     internal abstract class UnaryNode : Node
     {
         internal Node operand;
+        internal UnaryFunctions function;
 
-        internal abstract override double CalcValue();
-        public abstract override string ToString();
+        internal override double CalcValue()
+        {
+            return function switch
+            {
+                UnaryFunctions.Sin => Math.Sin(operand.CalcValue()),
+                UnaryFunctions.Cos => Math.Cos(operand.CalcValue()),
+                UnaryFunctions.Tan => Math.Tan(operand.CalcValue()),
+                UnaryFunctions.Asin => Math.Asin(operand.CalcValue()),
+                UnaryFunctions.Acos => Math.Acos(operand.CalcValue()),
+                UnaryFunctions.Atan => Math.Atan(operand.CalcValue()),
+                UnaryFunctions.Sinh => Math.Sinh(operand.CalcValue()),
+                UnaryFunctions.Cosh => Math.Cosh(operand.CalcValue()),
+                UnaryFunctions.Tanh => Math.Tanh(operand.CalcValue()),
+                UnaryFunctions.Abs => Math.Abs(operand.CalcValue()),
+                UnaryFunctions.Ceil => Math.Ceiling(operand.CalcValue()),
+                UnaryFunctions.Floor => Math.Floor(operand.CalcValue()),
+                UnaryFunctions.Ln => Math.Log(operand.CalcValue()),
+                UnaryFunctions.Log => Math.Log10(operand.CalcValue()),
+                UnaryFunctions.Sqrt => Math.Sqrt(operand.CalcValue()),
+                UnaryFunctions.Negate => -(operand.CalcValue()),
+                _ => throw new Exception("Unsupported unary function: " + function)
+            };
+        }
         internal static UnaryNode UnaryNodeConstructor(Node operand, UnaryFunctions op)
         {
             return op switch
@@ -290,13 +255,13 @@ namespace ElaroSolutions.DARFormula
         internal SinNode(Node operand)
         {
             this.operand = operand;
-
+            this.function = UnaryFunctions.Sin;
         }
 
-        internal override double CalcValue()
+        /*internal override double CalcValue()
         {
             return Math.Sin(operand.CalcValue());
-        }
+        }*/
 
         public override string ToString()
         {
@@ -308,13 +273,13 @@ namespace ElaroSolutions.DARFormula
         internal CosNode(Node operand)
         {
             this.operand = operand;
-
+            this.function = UnaryFunctions.Cos;
         }
 
-        internal override double CalcValue()
-        {
-            return Math.Cos(operand.CalcValue());
-        }
+        // internal override double CalcValue()
+        // {
+        //     return Math.Cos(operand.CalcValue());
+        // }
 
         public override string ToString()
         {
@@ -326,12 +291,14 @@ namespace ElaroSolutions.DARFormula
         internal TanNode(Node operand)
         {
             this.operand = operand;
+            this.function = UnaryFunctions.Tan;
         }
 
-        internal override double CalcValue()
-        {
-            return Math.Tan(operand.CalcValue());
-        }
+        // internal override double CalcValue()
+        // {
+        //     return Math.Tan(operand.CalcValue());
+        // }
+
         public override string ToString()
         {
             return "tan(" + operand.ToString() + ")";
@@ -342,13 +309,14 @@ namespace ElaroSolutions.DARFormula
         internal AsinNode(Node operand)
         {
             this.operand = operand;
+            this.function = UnaryFunctions.Asin;
         }
 
 
-        internal override double CalcValue()
-        {
-            return Math.Asin(operand.CalcValue());
-        }
+        // internal override double CalcValue()
+        // {
+        //     return Math.Asin(operand.CalcValue());
+        // }
 
         public override string ToString()
         {
@@ -360,12 +328,13 @@ namespace ElaroSolutions.DARFormula
         internal AcosNode(Node operand)
         {
             this.operand = operand;
+            this.function = UnaryFunctions.Acos;
         }
 
-        internal override double CalcValue()
-        {
-            return Math.Acos(operand.CalcValue());
-        }
+        // internal override double CalcValue()
+        // {
+        //     return Math.Acos(operand.CalcValue());
+        // }
 
         public override string ToString()
         {
@@ -377,12 +346,13 @@ namespace ElaroSolutions.DARFormula
         internal AtanNode(Node operand)
         {
             this.operand = operand;
+            this.function = UnaryFunctions.Atan;
         }
 
-        internal override double CalcValue()
-        {
-            return Math.Atan(operand.CalcValue());
-        }
+        // internal override double CalcValue()
+        // {
+        //     return Math.Atan(operand.CalcValue());
+        // }
 
         public override string ToString()
         {
@@ -394,12 +364,13 @@ namespace ElaroSolutions.DARFormula
         internal SinhNode(Node operand)
         {
             this.operand = operand;
+            this.function = UnaryFunctions.Sinh;
         }
 
-        internal override double CalcValue()
-        {
-            return Math.Sinh(operand.CalcValue());
-        }
+        // internal override double CalcValue()
+        // {
+        //     return Math.Sinh(operand.CalcValue());
+        // }
 
         public override string ToString()
         {
@@ -411,14 +382,14 @@ namespace ElaroSolutions.DARFormula
         internal CoshNode(Node operand)
         {
             this.operand = operand;
-
+            this.function = UnaryFunctions.Cosh;
         }
 
 
-        internal override double CalcValue()
-        {
-            return Math.Cosh(operand.CalcValue());
-        }
+        // internal override double CalcValue()
+        // {
+        //     return Math.Cosh(operand.CalcValue());
+        // }
 
         public override string ToString()
         {
@@ -430,14 +401,15 @@ namespace ElaroSolutions.DARFormula
         internal TanhNode(Node operand)
         {
             this.operand = operand;
+            this.function = UnaryFunctions.Tanh;
 
         }
 
 
-        internal override double CalcValue()
-        {
-            return Math.Tanh(operand.CalcValue());
-        }
+        // internal override double CalcValue()
+        // {
+        //     return Math.Tanh(operand.CalcValue());
+        // }
 
         public override string ToString()
         {
@@ -449,14 +421,14 @@ namespace ElaroSolutions.DARFormula
         internal CeilNode(Node operand)
         {
             this.operand = operand;
-
+            this.function = UnaryFunctions.Ceil;
         }
 
 
-        internal override double CalcValue()
-        {
-            return Math.Ceiling(operand.CalcValue());
-        }
+        // internal override double CalcValue()
+        // {
+        //     return Math.Ceiling(operand.CalcValue());
+        // }
 
         public override string ToString()
         {
@@ -468,14 +440,15 @@ namespace ElaroSolutions.DARFormula
         internal FloorNode(Node operand)
         {
             this.operand = operand;
+            this.function = UnaryFunctions.Floor;
 
         }
 
 
-        internal override double CalcValue()
-        {
-            return Math.Floor(operand.CalcValue());
-        }
+        // internal override double CalcValue()
+        // {
+        //     return Math.Floor(operand.CalcValue());
+        // }
 
         public override string ToString()
         {
@@ -487,14 +460,14 @@ namespace ElaroSolutions.DARFormula
         internal LogNode(Node operand)
         {
             this.operand = operand;
-
+            this.function = UnaryFunctions.Log;
         }
 
 
-        internal override double CalcValue()
-        {
-            return Math.Log10(operand.CalcValue());
-        }
+        // internal override double CalcValue()
+        // {
+        //     return Math.Log10(operand.CalcValue());
+        // }
 
         public override string ToString()
         {
@@ -506,13 +479,13 @@ namespace ElaroSolutions.DARFormula
         internal LnNode(Node operand)
         {
             this.operand = operand;
-
+            this.function = UnaryFunctions.Ln;
         }
 
-        internal override double CalcValue()
-        {
-            return Math.Log(operand.CalcValue(), Math.E);
-        }
+        // internal override double CalcValue()
+        // {
+        //     return Math.Log(operand.CalcValue(), Math.E);
+        // }
 
         public override string ToString()
         {
@@ -524,14 +497,15 @@ namespace ElaroSolutions.DARFormula
         internal AbsNode(Node operand)
         {
             this.operand = operand;
+            this.function = UnaryFunctions.Abs;
 
         }
 
 
-        internal override double CalcValue()
-        {
-            return Math.Abs(operand.CalcValue());
-        }
+        // internal override double CalcValue()
+        // {
+        //     return Math.Abs(operand.CalcValue());
+        // }
 
         public override string ToString()
         {
@@ -544,13 +518,13 @@ namespace ElaroSolutions.DARFormula
         internal SqrtNode(Node operand)
         {
             this.operand = operand;
-
+            this.function = UnaryFunctions.Sqrt;
         }
 
-        internal override double CalcValue()
-        {
-            return Math.Sqrt(operand.CalcValue());
-        }
+        // internal override double CalcValue()
+        // {
+        //     return Math.Sqrt(operand.CalcValue());
+        // }
 
         public override string ToString()
         {
@@ -562,12 +536,13 @@ namespace ElaroSolutions.DARFormula
         internal NegateNode(Node operand)
         {
             this.operand = operand;
+            this.function = UnaryFunctions.Negate;
         }
 
-        internal override double CalcValue()
-        {
-            return -operand.CalcValue();
-        }
+        // internal override double CalcValue()
+        // {
+        //     return -operand.CalcValue();
+        // }
 
         public override string ToString()
         {
@@ -578,8 +553,84 @@ namespace ElaroSolutions.DARFormula
     internal abstract class BinaryNode : Node
     {
         internal Node preoperand, postoperand;
+        internal BinaryFunctions function;
 
-        internal abstract override double CalcValue();
+        internal override double CalcValue()
+        {
+            double result;
+            switch(function)
+            {
+                case BinaryFunctions.Equals: 
+                {
+                    double cachepre = preoperand.CalcValue(), 
+                        cachepost = postoperand.CalcValue();
+                    if (Double.IsNaN(cachepre) || Double.IsNaN(cachepost))
+                        return 0;
+                    return Math.Abs(this.preoperand.CalcValue() - this.postoperand.CalcValue()) < PRECISION ? 1 : 0;
+                };break;
+                case BinaryFunctions.Unequals: 
+                {
+                    double cachepre = preoperand.CalcValue(), 
+                        cachepost = postoperand.CalcValue();
+                    if (Double.IsNaN(cachepre) || Double.IsNaN(cachepost))
+                        return 1;
+                    return Math.Abs(cachepre - cachepost) < PRECISION ? 0 : 1;
+                };break;
+                case BinaryFunctions.Greater: 
+                {
+                    double cachepre = this.preoperand.CalcValue(), 
+                        cachepost = this.postoperand.CalcValue();
+                    return (Math.Abs(cachepre - cachepost)) > PRECISION ? (cachepre > cachepost ? 1 : 0) : 0;
+                };break;
+                case BinaryFunctions.GreaterEquals:
+                {
+                    double cachepre = this.preoperand.CalcValue(), 
+                        cachepost = this.postoperand.CalcValue();
+                    return (Math.Abs(cachepre - cachepost)) > PRECISION ? 
+                                    (cachepre > cachepost ? 1 : 0) : 1;
+                };break;
+                case BinaryFunctions.Lesser: 
+                {
+                    double cachepre = this.preoperand.CalcValue(), 
+                        cachepost = this.postoperand.CalcValue();
+                    return (Math.Abs(cachepre - cachepost)) > PRECISION ? 
+                                    (cachepre < cachepost ? 1 : 0) : 0;
+                };break;
+                case BinaryFunctions.LesserEquals:
+                {
+                    double cachepre = this.preoperand.CalcValue(), 
+                        cachepost = this.postoperand.CalcValue();
+                    return (Math.Abs(cachepre - cachepost)) > PRECISION ? 
+                                    (cachepre < cachepost ? 1 : 0) : 1;
+                };break;
+                case BinaryFunctions.Exponent: 
+                {
+                    return Math.Pow(this.preoperand.CalcValue(), this.postoperand.CalcValue());
+                };break;
+                case BinaryFunctions.Plus: 
+                {
+                    return this.preoperand.CalcValue() + this.postoperand.CalcValue();
+                };break;
+                case BinaryFunctions.Minus:
+                {
+                    return this.preoperand.CalcValue() - this.postoperand.CalcValue();
+                };break;
+                case BinaryFunctions.Times: 
+                {
+                    return this.preoperand.CalcValue() * this.postoperand.CalcValue();
+                };break;
+                case BinaryFunctions.Divide: 
+                {
+                    return this.preoperand.CalcValue() / this.postoperand.CalcValue();
+                };break;
+                case BinaryFunctions.Modulo: 
+                {
+                    return this.preoperand.CalcValue() % this.postoperand.CalcValue();
+                };break;
+                default: throw new Exception("Unsupported binary operation: " + function);
+            };
+        }
+
         public abstract override string ToString();
 
         internal static BinaryNode BinaryNodeConstructor(Node pre, Node post, BinaryFunctions op)
@@ -614,13 +665,13 @@ namespace ElaroSolutions.DARFormula
             this.postoperand = post;
         }
 
-        internal override double CalcValue()
-        {
-            double cachepre = preoperand.CalcValue(), cachepost = postoperand.CalcValue();
-            if (Double.IsNaN(cachepre) || Double.IsNaN(cachepost))
-            { return 0; }
-            return Math.Abs(this.preoperand.CalcValue() - this.postoperand.CalcValue()) < PRECISION ? 1 : 0;
-        }
+        // internal override double CalcValue()
+        // {
+        //     double cachepre = preoperand.CalcValue(), cachepost = postoperand.CalcValue();
+        //     if (Double.IsNaN(cachepre) || Double.IsNaN(cachepost))
+        //     { return 0; }
+        //     return Math.Abs(this.preoperand.CalcValue() - this.postoperand.CalcValue()) < PRECISION ? 1 : 0;
+        // }
 
         public override string ToString()
         {
@@ -636,13 +687,13 @@ namespace ElaroSolutions.DARFormula
             this.postoperand = post;
         }
 
-        internal override double CalcValue()
-        {
-            double cachepre = preoperand.CalcValue(), cachepost = postoperand.CalcValue();
-            if (Double.IsNaN(cachepre) || Double.IsNaN(cachepost))
-            { return 1; }
-            return Math.Abs(cachepre - cachepost) < PRECISION ? 0 : 1;
-        }
+        // internal override double CalcValue()
+        // {
+        //     double cachepre = preoperand.CalcValue(), cachepost = postoperand.CalcValue();
+        //     if (Double.IsNaN(cachepre) || Double.IsNaN(cachepost))
+        //     { return 1; }
+        //     return Math.Abs(cachepre - cachepost) < PRECISION ? 0 : 1;
+        // }
 
         public override string ToString()
         {
@@ -658,12 +709,12 @@ namespace ElaroSolutions.DARFormula
             this.postoperand = post;
         }
 
-        internal override double CalcValue()
-        {
-            double cachepre = this.preoperand.CalcValue(), cachepost = this.postoperand.CalcValue();
+        // internal override double CalcValue()
+        // {
+        //     double cachepre = this.preoperand.CalcValue(), cachepost = this.postoperand.CalcValue();
 
-            return (Math.Abs(cachepre - cachepost)) > PRECISION ? (cachepre > cachepost ? 1 : 0) : 0;
-        }
+        //     return (Math.Abs(cachepre - cachepost)) > PRECISION ? (cachepre > cachepost ? 1 : 0) : 0;
+        // }
 
         public override string ToString()
         {
@@ -679,12 +730,12 @@ namespace ElaroSolutions.DARFormula
             this.postoperand = post;
         }
 
-        internal override double CalcValue()
-        {
-            double cachepre = this.preoperand.CalcValue(), cachepost = this.postoperand.CalcValue();
+        // internal override double CalcValue()
+        // {
+        //     double cachepre = this.preoperand.CalcValue(), cachepost = this.postoperand.CalcValue();
 
-            return (Math.Abs(cachepre - cachepost)) > PRECISION ? (cachepre < cachepost ? 1 : 0) : 0;
-        }
+        //     return (Math.Abs(cachepre - cachepost)) > PRECISION ? (cachepre < cachepost ? 1 : 0) : 0;
+        // }
 
         public override string ToString()
         {
@@ -700,10 +751,10 @@ namespace ElaroSolutions.DARFormula
             this.postoperand = post;
         }
 
-        internal override double CalcValue()
-        {
-            return this.preoperand.CalcValue() + this.postoperand.CalcValue();
-        }
+        // internal override double CalcValue()
+        // {
+        //     return this.preoperand.CalcValue() + this.postoperand.CalcValue();
+        // }
 
         public override string ToString()
         {
@@ -719,10 +770,10 @@ namespace ElaroSolutions.DARFormula
             this.postoperand = post;
         }
 
-        internal override double CalcValue()
-        {
-            return this.preoperand.CalcValue() - this.postoperand.CalcValue();
-        }
+        // internal override double CalcValue()
+        // {
+        //     return this.preoperand.CalcValue() - this.postoperand.CalcValue();
+        // }
 
         public override string ToString()
         {
@@ -738,10 +789,10 @@ namespace ElaroSolutions.DARFormula
             this.postoperand = post;
         }
 
-        internal override double CalcValue()
-        {
-            return this.preoperand.CalcValue() * this.postoperand.CalcValue();
-        }
+        // internal override double CalcValue()
+        // {
+        //     return this.preoperand.CalcValue() * this.postoperand.CalcValue();
+        // }
 
         public override string ToString()
         {
@@ -757,10 +808,10 @@ namespace ElaroSolutions.DARFormula
             this.postoperand = post;
         }
 
-        internal override double CalcValue()
-        {
-            return this.preoperand.CalcValue() / this.postoperand.CalcValue();
-        }
+        // internal override double CalcValue()
+        // {
+        //     return this.preoperand.CalcValue() / this.postoperand.CalcValue();
+        // }
 
         public override string ToString()
         {
@@ -776,10 +827,10 @@ namespace ElaroSolutions.DARFormula
             this.postoperand = post;
         }
 
-        internal override double CalcValue()
-        {
-            return this.preoperand.CalcValue() % this.postoperand.CalcValue();
-        }
+        // internal override double CalcValue()
+        // {
+        //     return this.preoperand.CalcValue() % this.postoperand.CalcValue();
+        // }
 
         public override string ToString()
         {
@@ -795,10 +846,10 @@ namespace ElaroSolutions.DARFormula
             this.postoperand = post;
         }
 
-        internal override double CalcValue()
-        {
-            return Math.Pow(this.preoperand.CalcValue(), this.postoperand.CalcValue());
-        }
+        // internal override double CalcValue()
+        // {
+        //     return Math.Pow(this.preoperand.CalcValue(), this.postoperand.CalcValue());
+        // }
 
         public override string ToString()
         {
@@ -809,10 +860,42 @@ namespace ElaroSolutions.DARFormula
     internal abstract class TernaryNode : Node
     {
         protected Dictionary<string, double> variables;
-        internal VariableNode counter;
-        internal Node limit, formula;
+        private VariableNode counter;
+        private Node limit, formula;
 
-        internal abstract override double CalcValue();
+        private TernaryFunctions function;
+
+        internal override double CalcValue()
+        {
+            switch (function)
+            {
+                case TernaryFunctions.Sum:
+                {
+                    double lim = limit.CalcValue();
+                    double result = 0;
+                    for (double i = 1; i <= lim; ++i)
+                    {
+                        this.variables[counter.ToString()] = i;
+                        result += formula.CalcValue();
+                    }
+                    variables.Remove(this.counter.ToString());
+                    return result;
+                }; break;
+                case TernaryFunctions.Mult:
+                {
+                    double lim = this.limit.CalcValue();
+                    double result = 1;
+                    for (double i = 1; i <= lim; ++i)
+                    {
+                        this.variables[this.counter.ToString()] = i;
+                        result *= formula.CalcValue();
+                    }
+                    variables.Remove(this.counter.ToString());
+                    return result;
+                }; break;
+                default: throw new Exception("Unsupported ternary operation: "+ function);
+            }
+        }
         public abstract override string ToString();
 
         internal TernaryNode(string countingVarName, Node limit, Node formula, ref Dictionary<string, double> variables)
@@ -850,18 +933,18 @@ namespace ElaroSolutions.DARFormula
         : base(counter, limit, formula, ref variables)
         { }
 
-        internal override double CalcValue()
-        {
-            double lim = limit.CalcValue();
-            double result = 0;
-            for (double i = 1; i <= lim; ++i)
-            {
-                this.variables[counter.ToString()] = i;
-                result += formula.CalcValue();
-            }
-            variables.Remove(this.counter.ToString());
-            return result;
-        }
+        // internal override double CalcValue()
+        // {
+        //     double lim = limit.CalcValue();
+        //     double result = 0;
+        //     for (double i = 1; i <= lim; ++i)
+        //     {
+        //         this.variables[counter.ToString()] = i;
+        //         result += formula.CalcValue();
+        //     }
+        //     variables.Remove(this.counter.ToString());
+        //     return result;
+        // }
 
         public override string ToString()
         {
@@ -877,18 +960,18 @@ namespace ElaroSolutions.DARFormula
         : base(counter, limit, formula, ref variables)
         { }
 
-        internal override double CalcValue()
-        {
-            double lim = this.limit.CalcValue();
-            double result = 1;
-            for (double i = 1; i <= lim; ++i)
-            {
-                this.variables[this.counter.ToString()] = i;
-                result *= formula.CalcValue();
-            }
-            variables.Remove(this.counter.ToString());
-            return result;
-        }
+        // internal override double CalcValue()
+        // {
+        //     double lim = this.limit.CalcValue();
+        //     double result = 1;
+        //     for (double i = 1; i <= lim; ++i)
+        //     {
+        //         this.variables[this.counter.ToString()] = i;
+        //         result *= formula.CalcValue();
+        //     }
+        //     variables.Remove(this.counter.ToString());
+        //     return result;
+        // }
 
         public override string ToString()
         {

@@ -1,30 +1,33 @@
-package darformula;
+package dev.fldt.tumbleweed;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.fail;
+import org.junit.jupiter.api.Test;
 
-import org.junit.Test;
+import dev.fldt.tumbleweed.Formula.BinaryFunctions;
+import dev.fldt.tumbleweed.Formula.UnaryFunctions;
 
-public class DARFormulaTest {
+
+public class FormulaTest {
 
     @Test
     public void testCheckFormula() {
         System.out.println("testCheckFormula");
-        RuntimeFormula.FormulaTokens standard = new RuntimeFormula.FormulaTokens();
-        standard.add(new RuntimeFormula.Token("("));
-        standard.add(new RuntimeFormula.Token("3"));
-        standard.add(new RuntimeFormula.Token("+"));
-        standard.add(new RuntimeFormula.Token("x"));
-        standard.add(new RuntimeFormula.Token(")"));
-        standard.add(new RuntimeFormula.Token("*"));
-        standard.add(new RuntimeFormula.Token("5"));
-        standard.add(new RuntimeFormula.Token("^"));
-        standard.add(new RuntimeFormula.Token("-"));
-        standard.add(new RuntimeFormula.Token("log"));
-        standard.add(new RuntimeFormula.Token("("));
-        standard.add(new RuntimeFormula.Token("y"));
-        standard.add(new RuntimeFormula.Token(")"));
+        Formula.FormulaTokens standard = new Formula.FormulaTokens();
+        standard.add(new Formula.Token("("));
+        standard.add(new Formula.Token("3"));
+        standard.add(new Formula.Token("+"));
+        standard.add(new Formula.Token("x"));
+        standard.add(new Formula.Token(")"));
+        standard.add(new Formula.Token("*"));
+        standard.add(new Formula.Token("5"));
+        standard.add(new Formula.Token("^"));
+        standard.add(new Formula.Token("-"));
+        standard.add(new Formula.Token("log"));
+        standard.add(new Formula.Token("("));
+        standard.add(new Formula.Token("y"));
+        standard.add(new Formula.Token(")"));
         try {
-            assert (standard.equals(RuntimeFormula.FormulaTokens.Tokenize("(3 + x)*5^-log(y)")));
+            assert (standard.equals(Formula.FormulaTokens.Tokenize("(3 + x)*5^-log(y)")));
         } catch (UnexpectedCharacterException e) {
             e.printStackTrace();
             fail("The code should have recognized every character");
@@ -34,17 +37,17 @@ public class DARFormulaTest {
         } catch (IllegalArgumentException e) {
             e.printStackTrace();
             System.out.println(standard.toString());
-            fail("The code should have accepted standard");
+            fail("The code should have accepted the standard formula");
         }
         try {
-            RuntimeFormula.FormulaTokens.Tokenize("(3 + x)*5^-log(y)").checkFormula();
+            Formula.FormulaTokens.Tokenize("(3 + x)*5^-log(y)").checkFormula();
         } catch (IllegalArgumentException e) {
             e.printStackTrace();
             System.out.println(standard.toString());
-            fail("The code should have accepted (3 + x)*5^-log(y)");
+            fail("The code should have tokenized \"(3 + x)*5^-log(y)\" without error");
         }
-        System.out.println(RuntimeFormula.FormulaTokens.Tokenize("(3 + x)*5^-log(y)").toString());
-        System.out.println(RuntimeFormula.FormulaTokens.Tokenize("(3 + x)*5^-log(y)").checkFormula().makePostFix().toString());
+        System.out.println(Formula.FormulaTokens.Tokenize("(3 + x)*5^-log(y)").toString());
+        System.out.println(Formula.FormulaTokens.Tokenize("(3 + x)*5^-log(y)").checkFormula().makePostFix().toString());
 
 //		try
 //		{	
@@ -77,44 +80,32 @@ public class DARFormulaTest {
     }
 
     public void checkBadFormula(String formula, String expectedException) {
-        RuntimeFormula standard = new RuntimeFormula();
+        Formula standard = new Formula();
 
         try {
             standard.setFormula(formula, new String[]{"x", "y", "z"});
             System.out.println(standard.toString());
             fail("The formula is not refused");
-        } catch (UnexpectedCharacterException e) {
+        } catch (UnexpectedCharacterException | UnexpectedTokenException | UnevenParenthesesException | UnexpectedEOLException e) {
             System.out.println(e);
             if (!e.getClass().getName().equals(expectedException))
-                fail("Wrong exception\n");
-        } catch (UnexpectedTokenException e) {
-            System.out.println(e);
-            if (!e.getClass().getName().equals(expectedException))
-                fail("Wrong exception\n");
-        } catch (UnevenParenthesesException e) {
-            System.out.println(e);
-            if (!e.getClass().getName().equals(expectedException))
-                fail("Wrong exception\n");
-        } catch (UnexpectedEOLException e) {
-            System.out.println(e);
-            if (!e.getClass().getName().equals(expectedException))
-                fail("Wrong exception\n");
+                fail("Wrong exception. Expected " + expectedException +", got " + e.getClass().getName());
         }
 
     }
 
     @Test
-    public void testRuntimeFormula() {
-        System.out.println("testRuntimeFormula");
-        RuntimeFormula standard = new RuntimeFormula();
-        if (!(standard instanceof RuntimeFormula))
-            fail("The constructor for RuntimeFormula does not make the object");
+    public void testFormula() {
+        System.out.println("testFormula");
+        Formula standard = new Formula();
+        if (!(standard instanceof Formula))
+            fail("The constructor for Formula does not make the object");
     }
 
     @Test
     public void testPutVar() {
         System.out.println("testPutVar");
-        RuntimeFormula standard = new RuntimeFormula();
+        Formula standard = new Formula();
         standard.putVar("a", 5);
         if (standard.getVar("a") != 5)
             fail("putVar or getVar doesn't work");
@@ -123,7 +114,7 @@ public class DARFormulaTest {
     @Test
     public void testSetFormula() {
         System.out.println("testSetFormula");
-        RuntimeFormula standard = new RuntimeFormula();
+        Formula standard = new Formula();
         try {
             standard.setFormula("(3 + x)*5^-log(y)", new String[]{"x", "y", "z"});
             System.out.println(standard.toString());
@@ -151,28 +142,29 @@ public class DARFormulaTest {
     @Test
     public void testCalcValue() {
         System.out.println("testCalcValue");
-        RuntimeFormula primogenitor = new RuntimeFormula();
-        primogenitor = new RuntimeFormula(primogenitor.new BinaryElement('*', primogenitor.new BinaryElement('+', primogenitor.new SimpleElement(3), primogenitor.new SimpleElement("x")), primogenitor.new BinaryElement('^', primogenitor.new SimpleElement(5), primogenitor.new UnaryElement('-', primogenitor.new UnaryElement('l', primogenitor.new SimpleElement("y"))))), primogenitor.getAllVars());
-        primogenitor.putVar("x", 5);
-        primogenitor.putVar("y", 1);
+        Formula generator = new Formula();
+        generator = new Formula(generator.new BinaryNode(BinaryFunctions.MULTIPLY, 
+            generator.new BinaryNode(BinaryFunctions.PLUS, generator.new ValueNode(3), generator.new VariableNode("x")), generator.new BinaryNode(BinaryFunctions.EXPONENT, generator.new ValueNode(5), generator.new UnaryNode(UnaryFunctions.NEGATE, generator.new UnaryNode(UnaryFunctions.LOG10, generator.new VariableNode("y"))))), generator.getAllVars());
+        generator.putVar("x", 5);
+        generator.putVar("y", 1);
         try {
-            if (primogenitor.calcValue() != 8) {
-                System.out.println(primogenitor.calcValue());
-                System.out.println(primogenitor.formulaToString());
+            if (generator.calcValue() != 8) {
+                System.out.println(generator.calcValue());
+                System.out.println(generator.formulaToString());
                 fail("calcValue does not return the right answer");
             }
         } catch (UnexpectedVariableException e) {
             e.printStackTrace();
-            fail("Something wrong with either putVar or calcValue of SimpleElement");
+            fail("Something wrong with either putVar or calcValue of SimpleNode");
         } finally {
-            System.out.println(primogenitor.toString());
+            System.out.println(generator.toString());
         }
 
         try {
-            primogenitor.setFormula("(x=5)*6+(y%2=1)*4", new String[]{"x", "y", "z"});
-            if (primogenitor.calcValue() != 10) {
-                System.out.println(primogenitor.calcValue());
-                System.out.println(primogenitor.formulaToString());
+            generator.setFormula("(x=5)*6+(y%2=1)*4", new String[]{"x", "y", "z"});
+            if (generator.calcValue() != 10) {
+                System.out.println(generator.calcValue());
+                System.out.println(generator.formulaToString());
                 fail("calcValue does not return the right answer");
             }
         } catch (RuntimeException e) {
@@ -185,7 +177,7 @@ public class DARFormulaTest {
     public void testTernary()
     {
         System.out.println("testTernary");
-        RuntimeFormula primogenitor = new RuntimeFormula();
+        Formula primogenitor = new Formula();
         try {
             primogenitor.setFormula("sum(i,5,i)", new String[]{"x", "y", "z"});
             if (primogenitor.calcValue() != 15) {

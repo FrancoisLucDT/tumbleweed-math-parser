@@ -1,8 +1,8 @@
-package darformula;
+package dev.fldt.tumbleweed;
 
 /**
  * 
- * @author Fran�ois Luc Denhez-Teuton
+ * @author François Luc Denhez-Teuton
  * 
  * 
  *
